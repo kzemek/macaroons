@@ -1,0 +1,14 @@
+{application, libmacaroons,
+    [
+        {description, "An Erlang wrapper for libmacaroons library"},
+        {vsn, "1"},
+        {modules, [
+            libmacaroons
+        ]},
+        {registered, []},
+        {applications, [
+            kernel,
+            stdlib
+        ]},
+        {env, []}
+    ]}.
