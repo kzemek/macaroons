@@ -227,39 +227,12 @@ inline TERM make(ErlNifEnv *env, const str_atom &var)
 // std::string
 inline int get(ErlNifEnv *env, ERL_NIF_TERM term, std::string &var)
 {
-    // The implementation below iterates through the list twice.  It may
-    // be faster to iterate through the list and append bytes one at a time.
-
-    unsigned len;
-    int ret = enif_get_list_length(env, term, &len); // full list iteration
+    ErlNifBinary bin;
+    int ret = enif_inspect_iolist_as_binary(env, term, &bin);
     if(!ret)
-    {
-        // not a list, try as binary
-        ErlNifBinary bin;
-        ret = enif_inspect_binary(env, term, &bin);
-        if(!ret)
-        {
-            // not a binary either, so fail.
-            return 0;
-        }
-        var = std::string((const char*)bin.data, bin.size);
-        return ret;
-    }
-    var.resize(len+1); // +1 for terminating null
-    ret =  enif_get_string(env, term, &*(var.begin()), var.size(), ERL_NIF_LATIN1); // full list iteration
-    if(ret > 0)
-    {
-        var.resize(ret-1); // trim terminating null
-    }
-    else if(ret==0)
-    {
-        var.resize(0);
-    }
-    else
-    {
-        // oops string somehow got truncated
-        // var is correct size so do nothing
-    }
+        return 0;
+
+    var = std::string((const char*)bin.data, bin.size);
     return ret;
 }
 inline TERM make(ErlNifEnv *env, const std::string &var)
@@ -370,9 +343,6 @@ inline TERM make(ErlNifEnv *env, const unsigned long var)
 
 inline int get(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary &var)
 {
-    if (enif_is_binary(env, term))
-        return enif_inspect_binary(env, term, &var);
-
     return enif_inspect_iolist_as_binary(env, term, &var);
 }
 inline TERM make(ErlNifEnv *env, ErlNifBinary &var)

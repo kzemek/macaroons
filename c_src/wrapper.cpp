@@ -1,12 +1,20 @@
 #include "nifpp.h"
 #include "macaroons.h"
 
+#include <cstring>
 #include <forward_list>
 #include <future>
 #include <memory>
 #include <thread>
 #include <tuple>
 #include <vector>
+
+#define NIF_FUNCTION(NAME)                                                     \
+    static ERL_NIF_TERM NAME##_nif(                                            \
+        ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])               \
+    {                                                                          \
+        return wrap(NAME, env, argv);                                          \
+    }
 
 struct Env {
     Env()
@@ -65,11 +73,8 @@ struct Macaroon {
 namespace {
 thread_local ErlNifPid s_pid;
 thread_local nifpp::TERM s_ref;
-} // namespace
 
-extern "C" {
-
-int general_check(void *f, const unsigned char *pred, size_t pred_sz)
+extern "C" int generalCheck(void *f, const unsigned char *pred, size_t pred_sz)
 {
     nifpp::binary predicate{pred_sz};
     std::copy(pred, pred + pred_sz, predicate.data);
@@ -78,19 +83,16 @@ int general_check(void *f, const unsigned char *pred, size_t pred_sz)
     auto future = promise->get_future();
 
     Env env;
-    nifpp::TERM fun{enif_make_copy(env, static_cast<nifpp::TERM *>(f))};
+    nifpp::TERM fun{enif_make_copy(env, *static_cast<nifpp::TERM *>(f))};
     nifpp::TERM ref{enif_make_copy(env, s_ref)};
 
-    auto message = nifpp::make(
-        env, std::make_tuple(ref, fun, nifpp::make(env, promise), predicate));
+    auto message =
+        nifpp::make(env, std::make_tuple(ref, fun, nifpp::make(env, promise),
+                             nifpp::make(env, predicate)));
 
     enif_send(nullptr, &s_pid, env, message);
-    return future.get();
+    return future.get() ? 0 : -1;
 }
-
-} // extern "C"
-
-namespace {
 
 nifpp::TERM translateError(
     ErlNifEnv *const env, const enum macaroon_returncode err)
@@ -109,6 +111,7 @@ nifpp::TERM translateError(
             break;
         case MACAROON_NOT_AUTHORIZED:
             reason = "not_authorized";
+            break;
         case MACAROON_NO_JSON_SUPPORT:
             reason = "json_macaroons_not_supported";
             break;
@@ -212,7 +215,8 @@ ERL_NIF_TERM thirdPartyCaveats(ErlNifEnv *env, Macaroon *mp)
 
         if (macaroon_third_party_caveat(
                 *mp, i, &locationData, &locationSize, &idData, &idSize) != 0)
-            return translate_error(env, -1);
+            return translateError(
+                env, static_cast<enum macaroon_returncode>(-1));
 
         nifpp::binary location{locationSize};
         std::copy(locationData, locationData + locationSize, location.data);
@@ -220,7 +224,8 @@ ERL_NIF_TERM thirdPartyCaveats(ErlNifEnv *env, Macaroon *mp)
         nifpp::binary id{idSize};
         std::copy(idData, idData + idSize, id.data);
 
-        caveats.emplace_back(nifpp::make(env, std::make_tuple(location, id)));
+        caveats.emplace_back(nifpp::make(env,
+            std::make_tuple(nifpp::make(env, location), nifpp::make(env, id))));
     }
 
     return nifpp::make(env, std::make_tuple(nifpp::str_atom{"ok"}, caveats));
@@ -254,37 +259,43 @@ ERL_NIF_TERM satisfyGeneral(ErlNifEnv *env, Verifier *vp, nifpp::TERM fun)
 
     enum macaroon_returncode err = MACAROON_SUCCESS;
     macaroon_verifier_satisfy_general(
-        *vp, general_check, &vp->funs.front(), &err);
+        *vp, generalCheck, &vp->funs.front(), &err);
 
     if (err != MACAROON_SUCCESS)
         vp->funs.pop_front();
     else
-        vp->funs.front() = enif_make_copy(vp->env, fun);
+        vp->funs.front() = nifpp::TERM{enif_make_copy(vp->env, fun)};
 
     return ret(env, err);
 }
 
-ERL_NIF_TERM verify(ErlNifEnv *env, Verifier *vp, Macaroon *mp,
-    ErlNifBinary key, std::vector<Macaroon *> macaroons, nifpp::TERM ref)
+ERL_NIF_TERM startVerifyThread(ErlNifEnv *env, Verifier *vp, Macaroon *mp,
+    ErlNifBinary key, std::vector<Macaroon *> dischargeMacaroons,
+    nifpp::TERM ref)
 {
-    auto thread = nifpp::construct_resource<std::thread>([=] {
+    auto thread = nifpp::construct_resource<std::thread>([=]() mutable {
         Env localEnv;
         enif_self(env, &s_pid);
-        s_ref = enif_make_copy(localEnv, ref);
+        s_ref = nifpp::TERM{enif_make_copy(localEnv, ref)};
+
+        std::vector<struct macaroon *> macaroons;
+        std::transform(dischargeMacaroons.begin(), dischargeMacaroons.end(),
+            std::back_inserter(macaroons), [](Macaroon *m) { return m->m; });
 
         enum macaroon_returncode err = MACAROON_SUCCESS;
         macaroon_verify(*vp, *mp, key.data, key.size, macaroons.data(),
             macaroons.size(), &err);
 
-        nifpp::TERM msg{enif_make_copy(localEnv, ret(env1, err))};
+        nifpp::TERM msg{enif_make_copy(localEnv, ret(localEnv, err))};
         enif_send(nullptr, &s_pid, localEnv,
-            std::make_tuple(s_ref, nifpp::str_atom{"done"}, msg));
+            nifpp::make(localEnv,
+                      std::make_tuple(s_ref, nifpp::str_atom{"done"}, msg)));
     });
 
     return nifpp::make(env, thread);
 }
 
-ERL_NIF_TERM join(ErlNifEnv *env, std::thread *thread)
+ERL_NIF_TERM joinVerifyThread(ErlNifEnv *env, std::thread *thread)
 {
     if (thread->joinable())
         thread->join();
@@ -292,14 +303,112 @@ ERL_NIF_TERM join(ErlNifEnv *env, std::thread *thread)
     return ret(env, MACAROON_SUCCESS);
 }
 
-ERL_NIF_TERM verifyStatus(
+ERL_NIF_TERM setVerifyStatus(
     ErlNifEnv *env, std::promise<bool> *promise, bool status)
 {
     promise->set_value(status);
     return ret(env, MACAROON_SUCCESS);
 }
 
-} // namespace
+ERL_NIF_TERM returnBinary(ErlNifEnv *env, Macaroon &m,
+    void (*saveData)(const struct macaroon *, const unsigned char **, size_t *))
+{
+    const unsigned char *data = nullptr;
+    std::size_t dataSize = 0;
+
+    saveData(m, &data, &dataSize);
+    nifpp::binary bin{dataSize};
+    std::copy(data, data + dataSize, bin.data);
+
+    return ret(env, nifpp::make(env, bin), MACAROON_SUCCESS);
+}
+
+ERL_NIF_TERM returnBinary(ErlNifEnv *env, Macaroon &m,
+    size_t (*sizeHint)(const struct macaroon *),
+    int (*saveData)(const struct macaroon *, char *, size_t,
+                              enum macaroon_returncode *))
+{
+    auto size = sizeHint(m);
+    nifpp::binary bin{size};
+
+    enum macaroon_returncode err = MACAROON_SUCCESS;
+    saveData(m, reinterpret_cast<char *>(bin.data), bin.size, &err);
+    while (err == MACAROON_BUF_TOO_SMALL) {
+        size *= 2;
+        enif_realloc_binary(&bin, size);
+        saveData(m, reinterpret_cast<char *>(bin.data), bin.size, &err);
+    }
+
+    if (err != MACAROON_SUCCESS)
+        return ret(env, err);
+
+    const auto realSize = std::strlen(reinterpret_cast<char *>(bin.data));
+    if (size != realSize)
+        enif_realloc_binary(&bin, realSize);
+
+    return ret(env, nifpp::make(env, bin), MACAROON_SUCCESS);
+}
+
+ERL_NIF_TERM location(ErlNifEnv *env, Macaroon *m)
+{
+    return returnBinary(env, *m, macaroon_location);
+}
+
+ERL_NIF_TERM identifier(ErlNifEnv *env, Macaroon *m)
+{
+    return returnBinary(env, *m, macaroon_identifier);
+}
+
+ERL_NIF_TERM signature(ErlNifEnv *env, Macaroon *m)
+{
+    return returnBinary(env, *m, macaroon_signature);
+}
+
+ERL_NIF_TERM serialize(ErlNifEnv *env, Macaroon *m)
+{
+    return returnBinary(
+        env, *m, macaroon_serialize_size_hint, macaroon_serialize);
+}
+
+ERL_NIF_TERM deserialize(ErlNifEnv *env, std::string bin)
+{
+    enum macaroon_returncode err = MACAROON_SUCCESS;
+    auto m = nifpp::construct_resource<Macaroon>(
+        macaroon_deserialize(bin.c_str(), &err));
+    return ret(env, nifpp::make(env, m), err);
+}
+
+ERL_NIF_TERM inspect(ErlNifEnv *env, Macaroon *m)
+{
+    return returnBinary(env, *m, macaroon_inspect_size_hint, macaroon_inspect);
+}
+
+ERL_NIF_TERM copy(ErlNifEnv *env, Macaroon *m)
+{
+    enum macaroon_returncode err = MACAROON_SUCCESS;
+    auto copyM = nifpp::construct_resource<Macaroon>(macaroon_copy(*m, &err));
+    return ret(env, nifpp::make(env, copyM), err);
+}
+
+ERL_NIF_TERM compare(ErlNifEnv *env, Macaroon *m, Macaroon *n)
+{
+    return nifpp::make(env, macaroon_cmp(*m, *n) == 0);
+}
+
+ERL_NIF_TERM maxStrlen(ErlNifEnv *env)
+{
+    return nifpp::make(env, MACAROON_MAX_STRLEN);
+}
+
+ERL_NIF_TERM maxCaveats(ErlNifEnv *env)
+{
+    return nifpp::make(env, MACAROON_MAX_CAVEATS);
+}
+
+ERL_NIF_TERM suggestedSecretLength(ErlNifEnv *env)
+{
+    return nifpp::make(env, MACAROON_SUGGESTED_SECRET_LENGTH);
+}
 
 extern "C" {
 
@@ -314,84 +423,48 @@ static int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info)
     return 0;
 }
 
-static ERL_NIF_TERM create_macaroon(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(createMacaroon, env, argv);
-}
+NIF_FUNCTION(createMacaroon)
+NIF_FUNCTION(addFirstPartyCaveat)
+NIF_FUNCTION(addThirdPartyCaveat)
+NIF_FUNCTION(thirdPartyCaveats)
+NIF_FUNCTION(prepareForRequest)
+NIF_FUNCTION(createVerifier)
+NIF_FUNCTION(satisfyExact)
+NIF_FUNCTION(satisfyGeneral)
+NIF_FUNCTION(startVerifyThread)
+NIF_FUNCTION(joinVerifyThread)
+NIF_FUNCTION(setVerifyStatus)
+NIF_FUNCTION(location)
+NIF_FUNCTION(identifier)
+NIF_FUNCTION(signature)
+NIF_FUNCTION(serialize)
+NIF_FUNCTION(deserialize)
+NIF_FUNCTION(inspect)
+NIF_FUNCTION(copy)
+NIF_FUNCTION(compare)
+NIF_FUNCTION(maxStrlen)
+NIF_FUNCTION(maxCaveats)
+NIF_FUNCTION(suggestedSecretLength)
 
-static ERL_NIF_TERM add_first_party_caveat(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(addFirstPartyCaveat, env, argv);
-}
-
-static ERL_NIF_TERM add_third_party_caveat(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(addThirdPartyCaveat, env, argv);
-}
-
-static ERL_NIF_TERM third_party_caveats(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(thirdPartyCaveats, env, argv);
-}
-
-static ERL_NIF_TERM prepare_for_request(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(prepareForRequest, env, argv);
-}
-
-static ERL_NIF_TERM create_verifier(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(createVerifier, env, argv);
-}
-
-static ERL_NIF_TERM satisfy_exact(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(satisfyExact, env, argv);
-}
-
-static ERL_NIF_TERM satisfy_general(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(satisfyGeneral, env, argv);
-}
-
-static ERL_NIF_TERM start_verify_thread(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(verify, env, argv);
-}
-
-static ERL_NIF_TERM join_verify_thread(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(join, env, argv);
-}
-
-static ERL_NIF_TERM set_verify_status(
-    ErlNifEnv *env, int /*argc*/, const ERL_NIF_TERM argv[])
-{
-    return wrap(verifyStatus, env, argv);
-}
-
-static ErlNifFunc nif_funcs[] = {{"create_macaroon", 3, create_macaroon},
-    {"add_first_party_caveat", 2, add_first_party_caveat},
-    {"add_third_party_caveat", 4, add_third_party_caveat},
-    {"third_party_caveats", 3, third_party_caveats},
-    {"prepare_for_request", 2, prepare_for_request},
-    {"create_verifier", 0, create_verifier},
-    {"satisfy_exact", 2, satisfy_exact},
-    {"satisfy_general", 2, satisfy_general},
-    {"start_verify_thread", 5, start_verify_thread},
-    {"join_verify_thread", 1, join_verify_thread},
-    {"set_verify_status", 2, set_verify_status}};
+static ErlNifFunc nif_funcs[] = {{"create_macaroon", 3, createMacaroon_nif},
+    {"add_first_party_caveat", 2, addFirstPartyCaveat_nif},
+    {"add_third_party_caveat", 4, addThirdPartyCaveat_nif},
+    {"third_party_caveats", 1, thirdPartyCaveats_nif},
+    {"prepare_for_request", 2, prepareForRequest_nif},
+    {"create_verifier", 0, createVerifier_nif},
+    {"satisfy_exact", 2, satisfyExact_nif},
+    {"satisfy_general", 2, satisfyGeneral_nif},
+    {"start_verify_thread", 5, startVerifyThread_nif},
+    {"join_verify_thread", 1, joinVerifyThread_nif},
+    {"set_verify_status", 2, setVerifyStatus_nif},
+    {"location", 1, location_nif}, {"identifier", 1, identifier_nif},
+    {"signature", 1, signature_nif}, {"serialize", 1, serialize_nif},
+    {"deserialize", 1, deserialize_nif}, {"inspect", 1, inspect_nif},
+    {"copy", 1, copy_nif}, {"compare", 2, compare_nif},
+    {"max_strlen", 0, maxStrlen_nif}, {"max_caveats", 0, maxCaveats_nif},
+    {"suggested_secret_length", 0, suggestedSecretLength_nif}};
 
 ERL_NIF_INIT(macaroons_nif, nif_funcs, load, NULL, NULL, NULL)
 
 } // extern "C"
+} // namespace

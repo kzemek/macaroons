@@ -1,7 +1,7 @@
-{application, libmacaroons,
+{application, macaroons,
     [
         {description, "An Erlang wrapper for libmacaroons library"},
-        {vsn, "1"},
+        {vsn, git},
         {modules, [
             libmacaroons
         ]},
