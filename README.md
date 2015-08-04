@@ -85,7 +85,7 @@ libmacaroons-erlang includes source code of libmacaroons (located in
 `c_src/libmacaroons` directory).  As with libmacaroons, you'll need to somehow
 install [libsodium][5].  It's packaged in some Linux distributions, and can be
 installed from source on most *NIX platforms.  The library is NIF-based, so
-it also requires a C++14-compliant compiler.
+it also requires a C++11-compliant compiler.
 
 The installation of libmacaroons-erlang is trivial, provided your Erlang
 application uses [rebar][6] for dependency management. Simply add the library
