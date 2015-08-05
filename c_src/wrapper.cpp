@@ -1,6 +1,7 @@
 #include "nifpp.h"
 #include "macaroons.h"
 
+#include <algorithm>
 #include <cstring>
 #include <forward_list>
 #include <future>
