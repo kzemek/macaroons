@@ -106,11 +106,8 @@ create a macaroon like this:
 
 ```Erlang
 1> Secret = "this is our super secret key; only we should know it".
-"this is our super secret key; only we should know it"
 2> Public = "we used our secret key".
-"we used our secret key"
 3> Location = "http://mybank/".
-"http://mybank/"
 4> {ok, M} = macaroon:create(Location, Secret, Public).
 {ok,{macaroon,<<>>}}
 ```
@@ -175,7 +172,6 @@ for easy debugging:
 
 ```Erlang
 9> {ok, InspectData} = macaroon:inspect(M).
-{ok,<<"location http://mybank/\nidentifier we used our secret key\nsignature e3d9e02908526c4c0039ae15114115d97fdd68bf"...>>}
 10> io:format([InspectData, "\n"]).
 location http://mybank/
 identifier we used our secret key
@@ -205,9 +201,7 @@ macaroon:
 
 ```Erlang
 12> {ok, M2} = macaroon:add_first_party_caveat(M, "account = 3735928559").
-{ok,{macaroon,<<>>}}
 13> {ok, InspectData2} = macaroon:inspect(M2).
-{ok,<<"location http://mybank/\nidentifier we used our secret key\ncid account = 3735928559\nsignature 1efe4763f290dbc"...>>}
 14> io:format([InspectData2, "\n"]).
 location http://mybank/
 identifier we used our secret key
@@ -221,18 +215,15 @@ change with each of them.
 
 ```Erlang
 15> {ok, M3} = macaroon:add_first_party_caveat(M2, "time < 2020-01-01T00:00").
-{ok,{macaroon,<<>>}}
 16> macaroon:signature(M3).
 {ok,<<181,240,108,140,142,249,47,108,130,198,255,40,44,
       209,248,189,24,73,48,29,9,162,219,99,75,161,130,...>>}
 17> {ok, M4} = macaroon:add_first_party_caveat(M3, "email = alice@example.org").
-{ok,{macaroon,<<>>}}
 18> macaroon:signature(M4).
 {ok,<<221,245,83,228,96,131,229,91,141,113,171,130,43,
       227,216,252,242,29,107,241,156,64,214,23,187,159,
       180,...>>}
 19> {ok, InspectData4} = macaroon:inspect(M4).
-{ok,<<"location http://mybank/\nidentifier we used our secret key\ncid account = 3735928559\ncid time < 2020-01-01T00:"...>>}
 20> io:format([InspectData4, "\n"]).
 location http://mybank/
 identifier we used our secret key
@@ -279,9 +270,7 @@ form we can work with.
 
 ```Erlang
 2> {ok, M} = macaroon:deserialize(Msg).
-{ok,{macaroon,<<>>}}
 3> {ok, InspectData} = macaroon:inspect(M).
-{ok,<<"location http://mybank/\nidentifier we used our secret key\ncid account = 3735928559\ncid time < 2020-01-01T00:"...>>}
 4> io:format([InspectData, "\n"]).
 location http://mybank/
 identifier we used our secret key
@@ -336,9 +325,7 @@ directly about these caveats like so:
 
 ```Erlang
 7> macaroon_verifier:satisfy_exact(V, "account = 3735928559").
-ok
 8> macaroon_verifier:satisfy_exact(V, "email = alice@example.org").
-ok
 ```
 
 Caveats like these are called *exact caveats* because there is exactly one way
@@ -365,11 +352,8 @@ self-attenuate her macaroons to be only usable from her IP address and browser:
 
 ```Erlang
 9> macaroon_verifier:satisfy_exact(V, "IP = 127.0.0.1").
-ok
 10> macaroon_verifier:satisfy_exact(V, "browser = Chrome").
-ok
 11> macaroon_verifier:satisfy_exact(V, "action = deposit").
-ok
 ```
 
 Although it's always possible to satisfy a caveat within a macaroon by providing
@@ -406,7 +390,6 @@ uses [qdate][4] library for date operations):
 12>         (_) ->
 12>             false
 12>     end.
-#Fun<erl_eval.6.90072148>
 ```
 
 This callback processes all caveats that begin with `time < `, and returns
@@ -427,7 +410,6 @@ may check time-based predicates.
 
 ```Erlang
 16> macaroon_verifier:satisfy_general(V, CheckTime).
-ok
 ```
 
 It's finally time to verify our macaroon!  Now that we've informed the verifier
@@ -444,7 +426,6 @@ like one that only permits Alice to deposit into her account:
 
 ```Erlang
 18> {ok, N} = macaroon:add_first_party_caveat(M, "action = deposit").
-{ok,{macaroon,<<>>}}
 19> macaroon_verifier:verify(V, N, Secret).
 ok
 ```
@@ -458,13 +439,11 @@ The verifier we've built will reject all of these scenarios:
 ```Erlang
 20> % Unknown caveat
 20> {ok, N2} = macaroon:add_first_party_caveat(M, "OS = Windows XP").
-{ok,{macaroon,<<>>}}
 21> macaroon_verifier:verify(V, N2, Secret).
 {error,not_authorized}
 22> 
 22> % False caveat
 22> {ok, N3} = macaroon:add_first_party_caveat(M, "time < 2014-01-01T00:00").
-{ok,{macaroon,<<>>}}
 23> macaroon_verifier:verify(V, N3, Secret).
 {error,not_authorized}
 24>
@@ -474,9 +453,7 @@ The verifier we've built will reject all of these scenarios:
 25>
 25> % Incompetent hackers trying to change the signature
 25> {ok, N4} = macaroon:deserialize(<<"MDAxY2xvY2F0aW9uIGh0dHA6Ly9teWJhbmsvCjAwMjZpZGVudGlmaWVyIHdlIHVzZWQgb3VyIHNl\nY3JldCBrZXkKMDAxZGNpZCBhY2NvdW50ID0gMzczNTkyODU1OQowMDIwY2lkIHRpbWUgPCAyMDIw\nLTAxLTAxVDAwOjAwCjAwMjJjaWQgZW1haWwgPSBhbGljZUBleGFtcGxlLm9yZwowMDJmc2lnbmF0\ndXJlID8f19FL+bkC9p/aoMmIecC7GxdOcLVyUnrv6lJMM7NSCg==\n">>).
-{ok,{macaroon,<<>>}}
 26> {ok, InspectData4} = macaroon:inspect(N4).
-{ok,<<"location http://mybank/\nidentifier we used our secret key\ncid account = 3735928559\ncid time < 2020-01-01T00:"...>>}
 27> io:format([InspectData4, "\n"]).
 location http://mybank/
 identifier we used our secret key
@@ -513,17 +490,11 @@ limited to Alice's bank account.
 
 ```Erlang
 1> Secret = "this is a different super-secret key; never use the same secret twice".
-"this is a different super-secret key; never use the same secret twice"
 2> Public = "we used our other secret key".
-"we used our other secret key"
 3> Location = "http://mybank/".
-"http://mybank/"
 4> {ok, M} = macaroon:create(Location, Secret, Public).
-{ok,{macaroon,<<>>}}
 5> {ok, M2} = macaroon:add_first_party_caveat(M, "account = 3735928559").
-{ok,{macaroon,<<>>}}
 6> {ok, InspectData2} = macaroon:inspect(M2).
-{ok,<<"location http://mybank/\nidentifier we used our other secret key\ncid account = 3735928559\nsignature 1434e674a"...>>}
 7> io:format([InspectData2, "\n"]).
 location http://mybank/
 identifier we used our other secret key
@@ -553,17 +524,12 @@ Here's what this looks like in code:
 ```Erlang
 8> % you'll likely want to use a higher entropy source to generate this key
 8> CaveatKey = "4; guaranteed random by a fair toss of the dice".
-"4; guaranteed random by a fair toss of the dice"
 9> Predicate = "user = Alice".
-"user = Alice"
 10> % send_to_auth(CaveatKey, Predicate).
 10> % Identifier = recv_from_auth().
 10> Identifier = "this was how we remind auth of key/pred".
-"this was how we remind auth of key/pred"
 11> {ok, M3} = macaroon:add_third_party_caveat(M2, "http://auth.mybank/", CaveatKey, Identifier).
-{ok,{macaroon,<<>>}}
 12> {ok, InspectData3} = macaroon:inspect(M3).
-{ok,<<"location http://mybank/\nidentifier we used our other secret key\ncid account = 3735928559\ncid this was how we"...>>}
 13> io:format([InspectData3, "\n"]).
 location http://mybank/
 identifier we used our other secret key
@@ -603,11 +569,8 @@ and return a new macaroon that discharges the caveat:
 
 ```Erlang
 15> {ok, D} = macaroon:create("http://auth.mybank/", CaveatKey, Identifier).
-{ok,{macaroon,<<>>}}
 16> {ok, D2} = macaroon:add_first_party_caveat(D, "time < 2020-01-01T00:00").
-{ok,{macaroon,<<>>}}
 17> {ok, DInspectData2} = macaroon:inspect(D2).
-{ok,<<"location http://auth.mybank/\nidentifier this was how we remind auth of key/pred\ncid time < 2020-01-01T00:00\n"...>>}
 18> io:format([DInspectData2, "\n"]).
 location http://auth.mybank/
 identifier this was how we remind auth of key/pred
