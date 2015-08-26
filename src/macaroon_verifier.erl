@@ -60,7 +60,7 @@ create() ->
         Other -> Other
     end.
 
--spec satisfy_exact(Verifier :: verifier(), Predicate :: iolist()) ->
+-spec satisfy_exact(Verifier :: verifier(), Predicate :: iodata()) ->
     ok | {error, reason()}.
 satisfy_exact(#verifier{v = V}, Predicate) ->
     macaroons_nif:satisfy_exact(V, Predicate).
@@ -71,12 +71,12 @@ satisfy_exact(#verifier{v = V}, Predicate) ->
 satisfy_general(#verifier{v = V}, Predicate) ->
     macaroons_nif:satisfy_general(V, Predicate).
 
--spec verify(Verifier :: verifier(), Macaroon :: macaroon(), Key :: iolist()) ->
+-spec verify(Verifier :: verifier(), Macaroon :: macaroon(), Key :: iodata()) ->
     ok | {error, not_authorized | reason()}.
 verify(Verifier, Macaroon, Key) ->
     verify(Verifier, Macaroon, Key, []).
 
--spec verify(Verifier :: verifier(), Macaroon :: macaroon(), Key :: iolist(),
+-spec verify(Verifier :: verifier(), Macaroon :: macaroon(), Key :: iodata(),
     DischargeMacaroons :: [macaroon()]) ->
     ok | {error, not_authorized | reason()}.
 verify(#verifier{v = V}, #macaroon{m = M}, Key, DischargeMacaroons) ->

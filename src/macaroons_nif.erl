@@ -62,18 +62,18 @@ too_many_caveats |macaroon_invalid |unknown_error| any().
 %%% API
 %%%===================================================================
 
--spec create_macaroon(Location :: iolist(), Key :: iolist(), Id :: iolist()) ->
+-spec create_macaroon(Location :: iodata(), Key :: iodata(), Id :: iodata()) ->
     {ok, macaroon()} | {error, reason()}.
 create_macaroon(_Location, _Key, _Id) ->
     erlang:nif_error(macaroons_nif_not_loaded).
 
--spec add_first_party_caveat(Macaroon :: macaroon(), Caveat :: iolist()) ->
+-spec add_first_party_caveat(Macaroon :: macaroon(), Caveat :: iodata()) ->
     {ok, macaroon()} | {error, reason()}.
 add_first_party_caveat(_Macaroon, _Caveat) ->
     erlang:nif_error(macaroons_nif_not_loaded).
 
--spec add_third_party_caveat(Macaroon :: macaroon(), Location :: iolist(),
-    Key :: iolist(), Id :: iolist()) ->
+-spec add_third_party_caveat(Macaroon :: macaroon(), Location :: iodata(),
+    Key :: iodata(), Id :: iodata()) ->
     {ok, macaroon()} | {error, reason()}.
 add_third_party_caveat(_Macaroon, _Location, _Key, _Id) ->
     erlang:nif_error(macaroons_nif_not_loaded).
@@ -93,7 +93,7 @@ prepare_for_request(_Macaroon, _Dispatch) ->
 create_verifier() ->
     erlang:nif_error(macaroons_nif_not_loaded).
 
--spec satisfy_exact(Verifier :: verifier(), Predicate :: iolist()) ->
+-spec satisfy_exact(Verifier :: verifier(), Predicate :: iodata()) ->
     ok | {error, reason()}.
 satisfy_exact(_Verifier, _Predicate) ->
     erlang:nif_error(macaroons_nif_not_loaded).
@@ -105,7 +105,7 @@ satisfy_general(_Verifier, _Predicate) ->
     erlang:nif_error(macaroons_nif_not_loaded).
 
 -spec start_verify_thread(Verifier :: verifier(), Macaroon :: macaroon(),
-    Key :: iolist(), DischargeMacaroons :: [macaroon()], Ref :: reference()) ->
+    Key :: iodata(), DischargeMacaroons :: [macaroon()], Ref :: reference()) ->
     thread().
 start_verify_thread(_Verifier, _Macaroon, _Key, _DischargeMacaroons, _Ref) ->
     erlang:nif_error(macaroons_nif_not_loaded).
@@ -138,7 +138,7 @@ identifier(_Macaroon) ->
 serialize(_Macaroon) ->
     erlang:nif_error(macaroons_nif_not_loaded).
 
--spec deserialize(Data :: iolist()) ->
+-spec deserialize(Data :: iodata()) ->
     {ok, macaroon()} | {error, reason()}.
 deserialize(_Data) ->
     erlang:nif_error(macaroons_nif_not_loaded).

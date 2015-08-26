@@ -53,18 +53,18 @@
 %%% API
 %%%===================================================================
 
--spec create(Location :: iolist(), Key :: iolist(), Id :: iolist()) ->
+-spec create(Location :: iodata(), Key :: iodata(), Id :: iodata()) ->
     {ok, macaroon()} | {error, reason()}.
 create(Location, Key, Id) ->
     wrap(macaroons_nif:create_macaroon(Location, Key, Id)).
 
--spec add_first_party_caveat(Macaroon :: macaroon(), Caveat :: iolist()) ->
+-spec add_first_party_caveat(Macaroon :: macaroon(), Caveat :: iodata()) ->
     {ok, macaroon()} | {error, reason()}.
 add_first_party_caveat(#macaroon{m = M}, Caveat) ->
     wrap(macaroons_nif:add_first_party_caveat(M, Caveat)).
 
--spec add_third_party_caveat(Macaroon :: macaroon(), Location :: iolist(),
-    Key :: iolist(), Id :: iolist()) ->
+-spec add_third_party_caveat(Macaroon :: macaroon(), Location :: iodata(),
+    Key :: iodata(), Id :: iodata()) ->
     {ok, macaroon()} | {error, reason()}.
 add_third_party_caveat(#macaroon{m = M}, Location, Key, Id) ->
     wrap(macaroons_nif:add_third_party_caveat(M, Location, Key, Id)).
@@ -99,7 +99,7 @@ identifier(#macaroon{m = M}) ->
 serialize(#macaroon{m = M}) ->
     macaroons_nif:serialize(M).
 
--spec deserialize(Data :: iolist()) ->
+-spec deserialize(Data :: iodata()) ->
     {ok, macaroon()} | {error, reason()}.
 deserialize(Data) ->
     wrap(macaroons_nif:deserialize(Data)).
