@@ -185,7 +185,7 @@ suggested_secret_length() ->
 init() ->
     LibName = "libmacaroons_nif",
     LibPath =
-        case code:priv_dir(ssl2) of
+        case code:priv_dir(macaroons) of
             {error, bad_name} ->
                 case filelib:is_dir(filename:join(["..", priv])) of
                     true ->
