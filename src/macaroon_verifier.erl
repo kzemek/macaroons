@@ -40,13 +40,11 @@
 -export([create/0, satisfy_exact/2, satisfy_general/2, verify/3, verify/4]).
 
 %% Types
--record(macaroon, {m :: macaroons_nif:macaroon()}).
 -record(verifier, {v :: macaroons_nif:verifier()}).
 -type reason() :: macaroons_nif:reason().
--opaque macaroon() :: #macaroon{}.
 -opaque verifier() :: #verifier{}.
 
--export_type([reason/0, macaroon/0, verifier/0]).
+-export_type([reason/0, verifier/0]).
 
 %%%===================================================================
 %%% API
@@ -71,18 +69,22 @@ satisfy_exact(#verifier{v = V}, Predicate) ->
 satisfy_general(#verifier{v = V}, Predicate) ->
     macaroons_nif:satisfy_general(V, Predicate).
 
--spec verify(Verifier :: verifier(), Macaroon :: macaroon(), Key :: iodata()) ->
+-spec verify(Verifier :: verifier(), Macaroon :: macaroon:macaroon(),
+    Key :: iodata()) ->
     ok | {error, not_authorized | reason()}.
 verify(Verifier, Macaroon, Key) ->
     verify(Verifier, Macaroon, Key, []).
 
--spec verify(Verifier :: verifier(), Macaroon :: macaroon(), Key :: iodata(),
-    DischargeMacaroons :: [macaroon()]) ->
+-spec verify(Verifier :: verifier(), Macaroon :: macaroon:macaroon(),
+    Key :: iodata(), DischargeMacaroons :: [macaroon:macaroon()]) ->
     ok | {error, not_authorized | reason()}.
-verify(#verifier{v = V}, #macaroon{m = M}, Key, DischargeMacaroons) ->
-    MS = [Macaroon#macaroon.m || Macaroon <- DischargeMacaroons],
+verify(#verifier{v = V}, WrappedMacaroon, Key, DischargeMacaroons) ->
+    MS = [macaroon:unwrap_(Macaroon) || Macaroon <- DischargeMacaroons],
     Ref = make_ref(),
-    Thread = macaroons_nif:start_verify_thread(V, M, Key, MS, Ref),
+
+    Thread = macaroons_nif:start_verify_thread(V,
+        macaroon:unwrap_(WrappedMacaroon), Key, MS, Ref),
+
     VerifyResult = verify_loop(Ref),
     ok = macaroons_nif:join_verify_thread(Thread),
     VerifyResult.

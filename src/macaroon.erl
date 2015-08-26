@@ -42,6 +42,9 @@
     identifier/1, serialize/1, deserialize/1, inspect/1, copy/1, compare/2,
     max_strlen/0, max_caveats/0, suggested_secret_length/0]).
 
+%% Internal API
+-export([unwrap_/1]).
+
 %% Types
 -record(macaroon, {m :: macaroons_nif:macaroon()}).
 -type reason() :: macaroons_nif:reason().
@@ -130,6 +133,10 @@ max_caveats() ->
 suggested_secret_length() ->
     macaroons_nif:suggested_secret_length().
 
+-spec unwrap_(macaroon()) -> macaroons_nif:macaroon().
+unwrap_(#macaroon{m = Macaroon}) ->
+    Macaroon.
+
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
@@ -138,4 +145,4 @@ suggested_secret_length() ->
     ({ok, macaroons_nif:macaroon()}) -> {ok, macaroon()};
     ({error, reason()}) -> {error, reason()}.
 wrap({ok, Macaroon}) -> {ok, #macaroon{m = Macaroon}};
-wrap(Other) -> Other.
+wrap({error, Reason}) -> {error, Reason}.
