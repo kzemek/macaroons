@@ -93,7 +93,7 @@ to the list of dependencies in rebar.conf:
 
 ```Erlang
 {deps, [
-    {macaroons, "0.5.1", {git, "https://github.com/kzemek/libmacaroons-erlang.git", {tag, "0.5.1"}}}
+    {macaroons, "0.5.2", {git, "https://github.com/kzemek/libmacaroons-erlang.git", {tag, "0.5.2"}}}
 ]}.
 ```
 
