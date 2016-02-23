@@ -1,0 +1,8 @@
+[{<<"base64url">>,
+  {git,"https://github.com/dvv/base64url.git",
+       {ref,"f2c64ed8b9bebc536fad37ad97243452b674b837"}},
+  0},
+ {<<"enacl_p">>,
+  {git,"https://github.com/kzemek/enacl_p.git",
+       {ref,"3c7f9391bc4908ffac85d1dfac3d4afd2bb71f45"}},
+  0}].

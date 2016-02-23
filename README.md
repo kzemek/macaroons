@@ -1,14 +1,14 @@
 > Note: This README file is a slightly adapted version of README from
-> [rescrv/libmacaroons][1].
+> [rescrv/libmacaroons].
 
 Macaroons are Better Than Cookies!
 ==================================
 
-This library is an Erlang wrapper for [libmacaroons][2], a library which
-provides an implementation of [macaroons][3].  Macaroons are flexible
-authorization tokens that work great in distributed systems.  Like cookies,
-macaroons are bearer tokens that enable applications to ascertain whether their
-holders' actions are authorized.  But macaroons are better than cookies!
+This library is [libmacaroons]-compatible Erlang implementation of [macaroons].
+Macaroons are flexible authorization tokens that work great in distributed
+systems.  Like cookies, macaroons are bearer tokens that enable applications to
+ascertain whether their holders' actions are authorized.  But macaroons are
+better than cookies!
 
 Why Macaroons?
 --------------
@@ -18,12 +18,12 @@ to be immediately usable by developers, but they include several features not
 present in cookies or other token-based authorization schemes.  In particular:
 
  - Delegation with Contextual Caveats (i.e., confinement of the usage context):  
-   Macaroons support delegation.  Give your macaroon to another user, and they 
-   can act on your behalf, with the same authority.  Cookies permit delegation 
+   Macaroons support delegation.  Give your macaroon to another user, and they
+   can act on your behalf, with the same authority.  Cookies permit delegation
    as well, but the remaining features of macaroons make it much more safe and
    practical to pass around macaroons than cookies.  In particular, macaroons
    can limit when, where, and by whom the delegated authority can be exercised
-   (e.g., within one minute, from a machine that holds a certain key, or by a 
+   (e.g., within one minute, from a machine that holds a certain key, or by a
    certain logged-in user), by using attenuation and third-party caveats.
 
  - Attenuation:  Macaroons enable users to add caveats to the macaroon that
@@ -81,19 +81,22 @@ alongside your macaroons and read on!
 Installing Macaroons
 --------------------
 
-libmacaroons-erlang includes source code of libmacaroons (located in
-`c_src/libmacaroons` directory).  As with libmacaroons, you'll need to somehow
-install [libsodium][5].  It's packaged in some Linux distributions, and can be
-installed from source on most *NIX platforms.  The library is NIF-based, so
-it also requires a C++14-compliant compiler.
+Building `macaroons` has the following requirements:
 
-The installation of libmacaroons-erlang is trivial, provided your Erlang
-application uses [rebar][6] for dependency management. Simply add the library
-to the list of dependencies in rebar.conf:
+* [libsodium] installed on the system
+* C compiler
+* Erlang compiled with enabled dirty NIFs
+* [rebar]
+
+`macaroons` uses [enacl] to provide libsodium cryptographic functions in Erlang.
+
+Including `macaroons` is trivial, provided your Erlang application uses [rebar]
+for dependency management. Simply add the library to the list of dependencies in
+rebar.conf:
 
 ```Erlang
 {deps, [
-    {macaroons, "0.5.2", {git, "https://github.com/kzemek/libmacaroons-erlang.git", {tag, "0.5.2"}}}
+    {macaroons, "1.0.0", {git, "https://github.com/kzemek/macaroons.git", {tag, "1.0.0"}}}
 ]}.
 ```
 
@@ -108,8 +111,7 @@ create a macaroon like this:
 1> Secret = "this is our super secret key; only we should know it".
 2> Public = "we used our secret key".
 3> Location = "http://mybank/".
-4> {ok, M} = macaroon:create(Location, Secret, Public).
-{ok,{macaroon,<<>>}}
+4> M = macaroon:create(Location, Secret, Public).
 ```
 
 We've created our first macaroon!
@@ -124,7 +126,7 @@ portion:
 
 ```Erlang
 5> macaroon:identifier(M).
-{ok,<<"we used our secret key">>}
+<<"we used our secret key">>
 ```
 
 This public portion, known as the macaroon's identifier, can be anything that
@@ -152,15 +154,14 @@ Both of these pieces of information are publicly accessible:
 
 ```Erlang
 6> macaroon:location(M).
-{ok,<<"http://mybank/">>}
+<<"http://mybank/">>
 7> macaroon:signature(M).
-{ok,<<227,217,224,41,8,82,108,76,0,57,174,21,17,65,21,
-      217,127,221,104,191,43,163,121,179,66,170,240,...>>}
+<<"e3d9e02908526c4c0039ae15114115d97fdd68bf2ba379b342aaf0f617d0552f">>
 ```
 
 We can share this macaroon with others by serializing it.  The serialized form
 is pure-ASCII, and is safe for inclusion in secure email, a standard HTTPS
-cookie, or a URL.   We can get the serialized form with:
+cookie, or a URL.  We can get the serialized form with:
 
 ```Erlang
 8> macaroon:serialize(M).
@@ -171,8 +172,7 @@ Of course, this serialized form can be displayed in a more human-readable form
 for easy debugging:
 
 ```Erlang
-9> {ok, InspectData} = macaroon:inspect(M).
-10> io:format([InspectData, "\n"]).
+9> io:format("~s", [macaroon:inspect(M)]).
 location http://mybank/
 identifier we used our secret key
 signature e3d9e02908526c4c0039ae15114115d97fdd68bf2ba379b342aaf0f617d0552f
@@ -188,8 +188,7 @@ people should hold such power.  Let's add a caveat to our macaroon that
 restricts it to just the account number 3735928559.
 
 ```Erlang
-11> macaroon:add_first_party_caveat(M, "account = 3735928559").
-{ok,{macaroon,<<>>}}
+10> macaroon:add_first_party_caveat(M, "account = 3735928559").
 ```
 
 This new macaroon includes the same identifier and location that our old
@@ -200,9 +199,8 @@ this new macaroon cannot simply remove our new caveat to construct the old
 macaroon:
 
 ```Erlang
-12> {ok, M2} = macaroon:add_first_party_caveat(M, "account = 3735928559").
-13> {ok, InspectData2} = macaroon:inspect(M2).
-14> io:format([InspectData2, "\n"]).
+11> M2 = macaroon:add_first_party_caveat(M, "account = 3735928559").
+12> io:format("~s", [macaroon:inspect(M2)]).
 location http://mybank/
 identifier we used our secret key
 cid account = 3735928559
@@ -214,17 +212,13 @@ Of course, we can add a few more caveats, and the macaroon's signature will
 change with each of them.
 
 ```Erlang
-15> {ok, M3} = macaroon:add_first_party_caveat(M2, "time < 2020-01-01T00:00").
-16> macaroon:signature(M3).
-{ok,<<181,240,108,140,142,249,47,108,130,198,255,40,44,
-      209,248,189,24,73,48,29,9,162,219,99,75,161,130,...>>}
-17> {ok, M4} = macaroon:add_first_party_caveat(M3, "email = alice@example.org").
-18> macaroon:signature(M4).
-{ok,<<221,245,83,228,96,131,229,91,141,113,171,130,43,
-      227,216,252,242,29,107,241,156,64,214,23,187,159,
-      180,...>>}
-19> {ok, InspectData4} = macaroon:inspect(M4).
-20> io:format([InspectData4, "\n"]).
+13> M3 = macaroon:add_first_party_caveat(M2, "time < 2020-01-01T00:00").
+14> macaroon:signature(M3).
+<<"b5f06c8c8ef92f6c82c6ff282cd1f8bd1849301d09a2db634ba182536a611c49">>
+15> M4 = macaroon:add_first_party_caveat(M3, "email = alice@example.org").
+16> macaroon:signature(M4).
+<<"ddf553e46083e55b8d71ab822be3d8fcf21d6bf19c40d617bb9fb438934474b6">>
+17> io:format("~s", [macaroon:inspect(M4)]).
 location http://mybank/
 identifier we used our secret key
 cid account = 3735928559
@@ -241,9 +235,9 @@ authorized to access her account.  Ideally, she'll transmit the serialized form
 of the macaroon to the bank:
 
 ```Erlang
-25> {ok, Msg} = macaroon:serialize(M4).
+18> {ok, Msg} = macaroon:serialize(M4).
 {ok,<<"MDAxY2xvY2F0aW9uIGh0dHA6Ly9teWJhbmsvCjAwMjZpZGVudGlmaWVyIHdlIHVzZWQgb3VyIHNlY3JldCBrZXkKMDAxZGNpZCBhY2NvdW50"...>>}
-26> % send msg to the bank
+19> % send msg to the bank
 ```
 
 Verifying Macaroons
@@ -269,9 +263,8 @@ to deserialize the macaroon from the message.  This converts the macaroon into a
 form we can work with.
 
 ```Erlang
-2> {ok, M} = macaroon:deserialize(Msg).
-3> {ok, InspectData} = macaroon:inspect(M).
-4> io:format([InspectData, "\n"]).
+1> {ok, M} = macaroon:deserialize(Msg).
+2> io:format("~s", [macaroon:inspect(M)]).
 location http://mybank/
 identifier we used our secret key
 cid account = 3735928559
@@ -294,8 +287,7 @@ caveats.  The verifier itself is constructed once, and may be re-used to verify
 multiple macaroons.
 
 ```Erlang
-5> {ok, V} = macaroon_verifier:create().
-{ok,{verifier,<<>>}}
+3> V = macaroon_verifier:create().
 ```
 
 Let's go ahead and try to verify the macaroon to see if the request is
@@ -311,8 +303,8 @@ our verifier cannot prove that any of the caveats we've added are satisfied.  We
 can see that it fails just as we would expect:
 
 ```Erlang
-6> macaroon_verifier:verify(V, M, Secret).
-{error,not_authorized}
+4> macaroon_verifier:verify(V, M, Secret).
+{error,{unverified_caveat,<<"account = 3735928559">>}}
 ```
 
 We can inform the verifier of the caveats used by our application using two
@@ -324,14 +316,14 @@ request, and is known at the time of the request.  We can tell the verifier
 directly about these caveats like so:
 
 ```Erlang
-7> macaroon_verifier:satisfy_exact(V, "account = 3735928559").
-8> macaroon_verifier:satisfy_exact(V, "email = alice@example.org").
+5> V1 = macaroon_verifier:satisfy_exact(V, "account = 3735928559").
+6> V2 = macaroon_verifier:satisfy_exact(V1, "email = alice@example.org").
 ```
 
 Caveats like these are called *exact caveats* because there is exactly one way
 to satisfy them.  Either the account number is 3735928559, or it isn't.  At
 verification time, the verifier will check each caveat in the macaroon against
-the list of satisfied caveats provided to ``satisfyExact''.  When it finds a
+the list of satisfied caveats provided to `satisfyExact`.  When it finds a
 match, it knows that the caveat holds and it can move onto the next caveat in
 the macaroon.
 
@@ -351,9 +343,9 @@ following facts, the verifier will continue to work even if Alice decides to
 self-attenuate her macaroons to be only usable from her IP address and browser:
 
 ```Erlang
-9> macaroon_verifier:satisfy_exact(V, "IP = 127.0.0.1").
-10> macaroon_verifier:satisfy_exact(V, "browser = Chrome").
-11> macaroon_verifier:satisfy_exact(V, "action = deposit").
+7> V3 = macaroon_verifier:satisfy_exact(V2, "IP = 127.0.0.1").
+8> V4 = macaroon_verifier:satisfy_exact(V3, "browser = Chrome").
+9> V5 = macaroon_verifier:satisfy_exact(V4, "action = deposit").
 ```
 
 Although it's always possible to satisfy a caveat within a macaroon by providing
@@ -380,16 +372,16 @@ is satisfied.
 
 We can verify the time caveat on Alice's macaroon by writing a function that
 checks the current time against the time specified by the caveat (the example
-uses [qdate][4] library for date operations):
+uses [qdate] library for date operations):
 
 ```Erlang
-12> CheckTime =
-12>     fun
-12>         (<<"time < ", Date/binary>>) ->
-12>             qdate:compare(erlang:now(), '<=', Date);
-12>         (_) ->
-12>             false
-12>     end.
+10> CheckTime =
+10>     fun
+10>         (<<"time < ", Date/binary>>) ->
+10>             qdate:compare(erlang:now(), '<=', Date);
+10>         (_) ->
+10>             false
+10>     end.
 ```
 
 This callback processes all caveats that begin with `time < `, and returns
@@ -397,11 +389,11 @@ This callback processes all caveats that begin with `time < `, and returns
 does indeed return `true` when the caveat holds, and `false` otherwise:
 
 ```Erlang
-13> CheckTime(<<"time < 2020-01-01T00:00">>).
+11> CheckTime(<<"time < 2020-01-01T00:00">>).
 true
-14> CheckTime(<<"time < 2014-01-01T00:00">>).
+12> CheckTime(<<"time < 2014-01-01T00:00">>).
 false
-15> CheckTime(<<"account = 3735928559">>).
+13> CheckTime(<<"account = 3735928559">>).
 false
 ```
 
@@ -409,7 +401,7 @@ We can provide the `CheckTime` function directly to the verifier, so that it
 may check time-based predicates.
 
 ```Erlang
-16> macaroon_verifier:satisfy_general(V, CheckTime).
+14> V6 = macaroon_verifier:satisfy_general(V5, CheckTime).
 ```
 
 It's finally time to verify our macaroon!  Now that we've informed the verifier
@@ -417,7 +409,7 @@ of all the various caveats that our application could embed within a macaroon,
 we can expect that the verification step will succeed.
 
 ```Erlang
-17> macaroon_verifier:verify(V, M, Secret).
+15> macaroon_verifier:verify(V6, M, Secret).
 ok
 ```
 
@@ -425,8 +417,8 @@ More importantly, the verifier will also work for macaroons we've not yet seen,
 like one that only permits Alice to deposit into her account:
 
 ```Erlang
-18> {ok, N} = macaroon:add_first_party_caveat(M, "action = deposit").
-19> macaroon_verifier:verify(V, N, Secret).
+16> N = macaroon:add_first_party_caveat(M, "action = deposit").
+17> macaroon_verifier:verify(V6, N, Secret).
 ok
 ```
 
@@ -437,24 +429,23 @@ macaroon could be an attempt by a determined attacker to break into our bank.
 The verifier we've built will reject all of these scenarios:
 
 ```Erlang
-20> % Unknown caveat
-20> {ok, N2} = macaroon:add_first_party_caveat(M, "OS = Windows XP").
-21> macaroon_verifier:verify(V, N2, Secret).
-{error,not_authorized}
-22> 
-22> % False caveat
-22> {ok, N3} = macaroon:add_first_party_caveat(M, "time < 2014-01-01T00:00").
-23> macaroon_verifier:verify(V, N3, Secret).
-{error,not_authorized}
-24>
-24> % Bad secret
-24> macaroon_verifier:verify(V, M, "this is not the secret we were looking for").
-{error,not_authorized}
-25>
-25> % Incompetent hackers trying to change the signature
-25> {ok, N4} = macaroon:deserialize(<<"MDAxY2xvY2F0aW9uIGh0dHA6Ly9teWJhbmsvCjAwMjZpZGVudGlmaWVyIHdlIHVzZWQgb3VyIHNl\nY3JldCBrZXkKMDAxZGNpZCBhY2NvdW50ID0gMzczNTkyODU1OQowMDIwY2lkIHRpbWUgPCAyMDIw\nLTAxLTAxVDAwOjAwCjAwMjJjaWQgZW1haWwgPSBhbGljZUBleGFtcGxlLm9yZwowMDJmc2lnbmF0\ndXJlID8f19FL+bkC9p/aoMmIecC7GxdOcLVyUnrv6lJMM7NSCg==\n">>).
-26> {ok, InspectData4} = macaroon:inspect(N4).
-27> io:format([InspectData4, "\n"]).
+18> % Unknown caveat
+18> N2 = macaroon:add_first_party_caveat(M, "OS = Windows XP").
+19> macaroon_verifier:verify(V6, N2, Secret).
+{error,{unverified_caveat,<<"OS = Windows XP">>}}
+20>
+20> % False caveat
+20> N3 = macaroon:add_first_party_caveat(M, "time < 2014-01-01T00:00").
+21> macaroon_verifier:verify(V6, N3, Secret).
+{error,{unverified_caveat,<<"time < 2020-01-01T00:00">>}}
+22>
+22> % Bad secret
+22> macaroon_verifier:verify(V6, M, "this is not the secret we were looking for").
+{error,{bad_signature_for_macaroon,<<"we used our secret key">>}}
+23>
+23> % Incompetent hackers trying to change the signature
+23> {ok, N4} = macaroon:deserialize(<<"MDAxY2xvY2F0aW9uIGh0dHA6Ly9teWJhbmsvCjAwMjZpZGVudGlmaWVyIHdlIHVzZWQgb3VyIHNl\nY3JldCBrZXkKMDAxZGNpZCBhY2NvdW50ID0gMzczNTkyODU1OQowMDIwY2lkIHRpbWUgPCAyMDIw\nLTAxLTAxVDAwOjAwCjAwMjJjaWQgZW1haWwgPSBhbGljZUBleGFtcGxlLm9yZwowMDJmc2lnbmF0\ndXJlID8f19FL+bkC9p/aoMmIecC7GxdOcLVyUnrv6lJMM7NSCg==\n">>).
+24> io:format("~s", [macaroon:inspect(N4)]).
 location http://mybank/
 identifier we used our secret key
 cid account = 3735928559
@@ -462,10 +453,10 @@ cid time < 2020-01-01T00:00
 cid email = alice@example.org
 signature 3f1fd7d14bf9b902f69fdaa0c98879c0bb1b174e70b572527aefea524c33b352
 ok
-28> macaroon:signature(M) =:= macaroon:signature(N).
+25> macaroon:signature(M) =:= macaroon:signature(N4).
 false
-29> macaroon_verifier:verify(V, N4, Secret).
-{error,not_authorized}
+26> macaroon_verifier:verify(V6, N4, Secret).
+{error,{bad_signature_for_macaroon,<<"we used our secret key">>}}
 ```
 
 Using Third-Party Caveats
@@ -492,10 +483,9 @@ limited to Alice's bank account.
 1> Secret = "this is a different super-secret key; never use the same secret twice".
 2> Public = "we used our other secret key".
 3> Location = "http://mybank/".
-4> {ok, M} = macaroon:create(Location, Secret, Public).
-5> {ok, M2} = macaroon:add_first_party_caveat(M, "account = 3735928559").
-6> {ok, InspectData2} = macaroon:inspect(M2).
-7> io:format([InspectData2, "\n"]).
+4> M = macaroon:create(Location, Secret, Public).
+5> M2 = macaroon:add_first_party_caveat(M, "account = 3735928559").
+6> io:format("~s", [macaroon:inspect(M2)]).
 location http://mybank/
 identifier we used our other secret key
 cid account = 3735928559
@@ -522,22 +512,21 @@ predicate to check.
 Here's what this looks like in code:
 
 ```Erlang
-8> % you'll likely want to use a higher entropy source to generate this key
-8> CaveatKey = "4; guaranteed random by a fair toss of the dice".
-9> Predicate = "user = Alice".
-10> % send_to_auth(CaveatKey, Predicate).
-10> % Identifier = recv_from_auth().
-10> Identifier = "this was how we remind auth of key/pred".
-11> {ok, M3} = macaroon:add_third_party_caveat(M2, "http://auth.mybank/", CaveatKey, Identifier).
-12> {ok, InspectData3} = macaroon:inspect(M3).
-13> io:format([InspectData3, "\n"]).
+7> % you'll likely want to use a higher entropy source to generate this key
+7> CaveatKey = "4; guaranteed random by a fair toss of the dice".
+8> Predicate = "user = Alice".
+9> % send_to_auth(CaveatKey, Predicate).
+9> % Identifier = recv_from_auth().
+9> Identifier = "this was how we remind auth of key/pred".
+10> M3 = macaroon:add_third_party_caveat(M2, "http://auth.mybank/", CaveatKey, Identifier).
+11> io:format("~s", [macaroon:inspect(M3)]).
 location http://mybank/
 identifier we used our other secret key
 cid account = 3735928559
 cid this was how we remind auth of key/pred
-vid Yafxa0nawoGwaaW7jnXFdokcQzpJX2_IbCE-rmmnnn0ykx9godTBSexebYN5Zy2Lcc5IgqrEXG4BnvK_l-naGafwLFqF4C5t
+vid f678186d92de0589225da7827ed26509ed33eb83601b9e96b21cdee80f4a9834176b77f06f3fc3b59a1547231362797158ca61226681a7946fa2781bef9a95e746f52e91af74f9ae
 cl http://auth.mybank/
-signature f1c7e8c009e2fb3fec2da107e2bd8b97f1041cd06e8ec1b4c681000f5fee4a28
+signature 9a986629809a40171d4cc32c3814fbf9e0d82f0b1eebb781fc3675d204e6066a
 ok
 ```
 
@@ -556,9 +545,9 @@ initial root macaroon, Alice.  Alice looks at the macaroon for the list of third
 party caveat (location, identifier) pairs that must be addressed.
 
 ```Erlang
-14> macaroon:third_party_caveats(M3).
-{ok,[{<<"http://auth.mybank/">>,
-      <<"this was how we remind auth of key/pred">>}]}
+12> macaroon:third_party_caveats(M3).
+[{<<"http://auth.mybank/">>,
+  <<"this was how we remind auth of key/pred">>}]
 ```
 
 In a real application, we'd look at these third party caveats, and contact each
@@ -568,10 +557,9 @@ the secret used to create the third-party caveat.  The server can then generate
 and return a new macaroon that discharges the caveat:
 
 ```Erlang
-15> {ok, D} = macaroon:create("http://auth.mybank/", CaveatKey, Identifier).
-16> {ok, D2} = macaroon:add_first_party_caveat(D, "time < 2020-01-01T00:00").
-17> {ok, DInspectData2} = macaroon:inspect(D2).
-18> io:format([DInspectData2, "\n"]).
+13> D = macaroon:create("http://auth.mybank/", CaveatKey, Identifier).
+14> D2 = macaroon:add_first_party_caveat(D, "time < 2020-01-01T00:00").
+15> io:format("~s", [macaroon:inspect(D2)]).
 location http://auth.mybank/
 identifier this was how we remind auth of key/pred
 cid time < 2020-01-01T00:00
@@ -595,20 +583,17 @@ useful only when presented alongside the root macaroon.  The root macaroon is
 used to bind the discharge macaroons like this:
 
 ```Erlang
-19> {ok, DP} = macaroon:prepare_for_request(M3, D2).
-{ok,{macaroon,<<>>}}
+16> DP = macaroon:prepare_for_request(M3, D2).
 ```
 
 If we were to look at the signatures on these prepared discharge macaroons, we
 would see that the binding process has irreversibly altered their signature(s).
 
 ```Erlang
-20> macaroon:signature(D2).
-{ok,<<46,209,4,152,118,233,213,132,9,80,39,75,87,155,7,
-      112,49,125,245,77,51,141,157,48,57,199,198,...>>}
-21> macaroon:signature(DP).
-{ok,<<234,59,67,200,81,76,30,233,62,183,214,135,21,212,
-      146,202,97,7,39,115,26,142,122,62,99,183,76,...>>}
+17> macaroon:signature(D2).
+<<"2ed1049876e9d5840950274b579b0770317df54d338d9d3039c7c67d0d91d63c">>
+18> macaroon:signature(DP).
+<<"dd3690773cd08867dc544d7a84a26aae2581f56a21f77f886812865abdea9554">>
 ```
 
 The root macaroon `M3` and its discharge macaroons `DP` are ready for the
@@ -618,15 +603,15 @@ verifier we built before.  We provide the discharge macaroons as a third
 argument to the verify call:
 
 ```Erlang
-23> macaroon_verifier:verify(V, M3, Secret, [DP]).
+19> macaroon_verifier:verify(V6, M3, Secret, [DP]).
 ok
 ```
 
 Without the `prepareForRequest` call, the verification would fail:
 
 ```Erlang
-24> macaroon_verifier:verify(V, M3, Secret, [D2]).
-{error,not_authorized}
+20> macaroon_verifier:verify(V6, M3, Secret, [D2]).
+{error,{bad_signature_for_macaroon,<<"this was how we remind auth of key/pred">>}}
 ```
 
 Choosing Secrets
@@ -661,9 +646,10 @@ be checked using this public key, and use the ciphertext directly as the
 caveat's identifier.  This saves a round trip, and frees the third party from
 having to remember an association between identifiers and key/predicate pairs.
 
-[1]: https://github.com/rescrv/libmacaroons/blob/ca1e875b06862e6cd515a4e3c0e5b124ef502366/README
-[2]: https://github.com/rescrv/libmacaroons
-[3]: http://research.google.com/pubs/pub41892.html
-[4]: https://github.com/choptastic/qdate
-[5]: https://github.com/jedisct1/libsodium
-[6]: https://github.com/rebar/rebar
+[rescrv/libmacaroons]: https://github.com/rescrv/libmacaroons/blob/ca1e875b06862e6cd515a4e3c0e5b124ef502366/README
+[libmacaroons]: https://github.com/rescrv/libmacaroons
+[macaroons]: http://research.google.com/pubs/pub41892.html
+[qdate]: https://github.com/choptastic/qdate
+[libsodium]: https://github.com/jedisct1/libsodium
+[rebar]: https://rebar3.org
+[enacl]: https://github.com/jlouis/enacl

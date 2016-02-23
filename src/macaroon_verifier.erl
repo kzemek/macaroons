@@ -1,4 +1,4 @@
-%%%-------------------------------------------------------------------
+%%%-----------------------------------------------------------------------------
 %%% @author Konrad Zemek
 %%% @copyright (C) 2015, Konrad Zemek <konrad.zemek@gmail.com>
 %%% All rights reserved.
@@ -28,79 +28,176 @@
 %%% ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 %%% POSSIBILITY OF SUCH DAMAGE.
 %%% @end
-%%%--------------------------------------------------------------------
+%%%-----------------------------------------------------------------------------
 %%% @doc
-%%% API for operations on a verifier.
+%%% This module contains operations for verifying macaroons.
 %%% @end
-%%%-------------------------------------------------------------------
+%%%-----------------------------------------------------------------------------
 -module(macaroon_verifier).
 -author("Konrad Zemek").
+
+-include("macaroon.hrl").
 
 %% API
 -export([create/0, satisfy_exact/2, satisfy_general/2, verify/3, verify/4]).
 
 %% Types
--record(verifier, {v :: macaroons_nif:verifier()}).
--type reason() :: macaroons_nif:reason().
--opaque verifier() :: #verifier{}.
+-type predicate() :: fun((binary()) -> boolean()).
+-type auth_error() ::
+{unverified_caveat, Caveat :: binary()}
+| {bad_signature_for_macaroon, MacaroonId :: binary()}
+| {failed_to_decrypt_caveat, CaveatId :: binary()}
+| {no_discharge_macaroon_for_caveat, CaveatId :: binary()}.
 
--export_type([reason/0, verifier/0]).
+-record(verifier, {
+    exact = sets:new() :: sets:set(binary()),
+    general = [] :: [predicate()]
+}).
+
+-opaque verifier() :: #verifier{}.
+-export_type([predicate/0, verifier/0, auth_error/0]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
--spec create() ->
-    {ok, verifier()} | {error, reason()}.
+%%------------------------------------------------------------------------------
+%% @doc
+%% Creates a new verifier.
+%% @end
+%%------------------------------------------------------------------------------
+-spec create() -> verifier().
 create() ->
-    case macaroons_nif:create_verifier() of
-        {ok, V} -> {ok, #verifier{v = V}};
-        Other -> Other
-    end.
+    #verifier{}.
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% Returns a new verifier that additionally accepts given exact caveat.
+%% @end
+%%------------------------------------------------------------------------------
 -spec satisfy_exact(Verifier :: verifier(), Predicate :: iodata()) ->
-    ok | {error, reason()}.
-satisfy_exact(#verifier{v = V}, Predicate) ->
-    macaroons_nif:satisfy_exact(V, Predicate).
+    verifier().
+satisfy_exact(#verifier{} = V, Predicate) when not is_binary(Predicate) ->
+    satisfy_exact(V, iolist_to_binary(Predicate));
+satisfy_exact(#verifier{} = V, Predicate) ->
+    V#verifier{exact = sets:add_element(Predicate, V#verifier.exact)}.
 
--spec satisfy_general(Verifier :: verifier(),
-    Predicate :: fun((binary()) -> boolean())) ->
-    ok | {error, reason()}.
-satisfy_general(#verifier{v = V}, Predicate) ->
-    macaroons_nif:satisfy_general(V, Predicate).
+%%------------------------------------------------------------------------------
+%% @doc
+%% Returns a new verifier that uses an additional predicate function to verify
+%% caveats.
+%% @end
+%%------------------------------------------------------------------------------
+-spec satisfy_general(Verifier :: verifier(), Predicate :: predicate()) ->
+    verifier().
+satisfy_general(#verifier{} = V, Predicate) when is_function(Predicate, 1) ->
+    V#verifier{general = [Predicate | V#verifier.general]}.
 
+%%------------------------------------------------------------------------------
+%% @equiv
+%% verify(Verifier, Macaroon, Key, [])
+%% @end
+%%------------------------------------------------------------------------------
 -spec verify(Verifier :: verifier(), Macaroon :: macaroon:macaroon(),
     Key :: iodata()) ->
-    ok | {error, not_authorized | reason()}.
+    ok | {error, auth_error()}.
 verify(Verifier, Macaroon, Key) ->
     verify(Verifier, Macaroon, Key, []).
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% Verifies a macaroon using given discharge macaroons and preconfigured
+%% verifier.
+%% @end
+%%------------------------------------------------------------------------------
 -spec verify(Verifier :: verifier(), Macaroon :: macaroon:macaroon(),
     Key :: iodata(), DischargeMacaroons :: [macaroon:macaroon()]) ->
-    ok | {error, not_authorized | reason()}.
-verify(#verifier{v = V}, WrappedMacaroon, Key, DischargeMacaroons) ->
-    MS = [macaroon:unwrap_(Macaroon) || Macaroon <- DischargeMacaroons],
-    Ref = make_ref(),
+    ok | {error, auth_error()}.
+verify(#verifier{} = V, #macaroon{} = M, Key, DischargeMacaroons) ->
+    DerivedKey = macaroon_utils:derive_key(Key),
+    verify(M#macaroon.signature, V, M, DerivedKey, DischargeMacaroons).
 
-    Thread = macaroons_nif:start_verify_thread(V,
-        macaroon:unwrap_(WrappedMacaroon), Key, MS, Ref),
-
-    VerifyResult = verify_loop(Ref),
-    ok = macaroons_nif:join_verify_thread(Thread),
-    VerifyResult.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
--spec verify_loop(Ref :: reference()) ->
-    ok | {error, reason()}.
-verify_loop(Ref) ->
-    receive
-        {Ref, Fun, Promise, Predicate} ->
-            Result = Fun(Predicate),
-            ok = macaroons_nif:set_verify_status(Promise, Result),
-            verify_loop(Ref);
-        {Ref, done, VerifyResult} ->
-            VerifyResult
+-spec verify(ParentSig :: binary(), Verifier :: verifier(),
+    Macaroon :: macaroon:macaroon(), Key :: binary(),
+    DischargeMacaroons :: [macaroon:macaroon()]) ->
+    ok | {error, auth_error()}.
+verify(ParentSig, V, M, Key, DischargeMacaroons) ->
+    BaseSignature =
+        enacl_p:auth(?HMAC_HASH_ALGORITHM, M#macaroon.identifier, Key),
+
+    VerifyResult =
+        verify_loop(ParentSig, V, DischargeMacaroons,
+            lists:reverse(M#macaroon.caveats), BaseSignature),
+
+    case VerifyResult of
+        {ok, Signature} ->
+            BoundSignature =
+                macaroon_utils:bind_signature(ParentSig, Signature),
+
+            case BoundSignature =:= M#macaroon.signature of
+                true -> ok;
+                false ->
+                    {error, {bad_signature_for_macaroon, M#macaroon.identifier}}
+            end;
+
+        {error, Reason} -> {error, Reason}
+    end.
+
+
+-spec verify_loop(ParentSig :: binary(), Verifier :: verifier(),
+    DMs :: [macaroon:macaroon()],
+    Caveats :: [binary() | {binary(), binary(), binary()}],
+    Signature :: binary()) ->
+    {ok, FinalSig :: binary()} | {error, {unverified_caveat, binary()}}.
+verify_loop(_ParentSig, _V, _DMs, [], Signature) -> {ok, Signature};
+
+verify_loop(ParentSig, V, DMs, [{Id, Vid, _Location} | Caveats], Signature) ->
+    NonceSize = enacl_p:secretbox_nonce_size(?SECRETBOX_ALGORITHMS),
+    <<Nonce:NonceSize/binary, CipherText/binary>> = Vid,
+
+    OpenBoxResult =
+        enacl_p:secretbox_open(?SECRETBOX_ALGORITHMS, CipherText, Nonce,
+            Signature),
+
+    case OpenBoxResult of
+        {error, _} -> {error, {failed_to_decrypt_caveat, Id}};
+        {ok, Key} ->
+            {DMsBefore, DMsAfterWithPivot} =
+                lists:splitwith(fun(M) ->
+                    M#macaroon.identifier =/= Id end, DMs),
+
+            case DMsAfterWithPivot of
+                [] -> {error, {no_discharge_macaroon_for_caveat, Id}};
+                [DM | DMsAfter] ->
+                    OtherDMs = DMsBefore ++ DMsAfter,
+                    case verify(ParentSig, V, DM, Key, OtherDMs) of
+                        {error, Reason} -> {error, Reason};
+                        ok ->
+                            NewSig = macaroon_utils:macaroon_hash2(Vid, Id,
+                                Signature),
+                            verify_loop(ParentSig, V, OtherDMs, Caveats, NewSig)
+                    end
+            end
+    end;
+
+verify_loop(ParentSig, V, DMs, [Caveat | Caveats], Signature) ->
+    case caveat_verifies(V, Caveat) of
+        false -> {error, {unverified_caveat, Caveat}};
+        true ->
+            NewSig = enacl_p:auth(?HMAC_HASH_ALGORITHM, Caveat, Signature),
+            verify_loop(ParentSig, V, DMs, Caveats, NewSig)
+    end.
+
+
+-spec caveat_verifies(Verifier :: verifier(), Caveat :: binary()) -> boolean().
+caveat_verifies(V, Caveat) ->
+    case sets:is_element(Caveat, V#verifier.exact) of
+        true -> true;
+        false ->
+            lists:any(fun(General) -> General(Caveat) end, V#verifier.general)
     end.
