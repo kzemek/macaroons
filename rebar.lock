@@ -4,5 +4,5 @@
   0},
  {<<"enacl_p">>,
   {git,"https://github.com/kzemek/enacl_p.git",
-       {ref,"3c7f9391bc4908ffac85d1dfac3d4afd2bb71f45"}},
+       {ref,"88c028d13003b0d505786e988ae0b57ed8cb0c99"}},
   0}].
