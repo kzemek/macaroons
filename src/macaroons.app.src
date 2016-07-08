@@ -1,14 +1,15 @@
 {application, macaroons,
     [
-        {description, "A libmacaroons-compatible macaroons library"},
+        {description, "An Erlang Macaroons library compatible with libmacaroons"},
         {vsn, git},
-        {modules, [
-            libmacaroons
-        ]},
+        {maintainers, ["Konrad Zemek"]},
         {registered, []},
         {applications, [
             kernel,
             stdlib
         ]},
-        {env, []}
+        {env, []},
+        {licenses, ["BSD 3-Clause"]},
+        {links, [{"GitHub", "https://github.com/kzemek/macaroons"}]},
+        {build_tools, [<<"rebar">>, <<"rebar3">>]}
     ]}.
