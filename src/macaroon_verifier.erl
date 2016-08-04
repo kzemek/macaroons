@@ -153,7 +153,7 @@ verify(ParentSig, V, M, Key, DischargeMacaroons) ->
     DMs :: [macaroon:macaroon()],
     Caveats :: [binary() | {binary(), binary(), binary()}],
     Signature :: binary()) ->
-    {ok, FinalSig :: binary()} | {error, {unverified_caveat, binary()}}.
+    {ok, FinalSig :: binary()} | {error, auth_error()}.
 verify_loop(_ParentSig, _V, _DMs, [], Signature) -> {ok, Signature};
 
 verify_loop(ParentSig, V, DMs, [{Id, Vid, _Location} | Caveats], Signature) ->
