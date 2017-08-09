@@ -96,7 +96,7 @@ rebar.conf:
 
 ```Erlang
 {deps, [
-    {macaroons, "1.0.0", {git, "https://github.com/kzemek/macaroons.git", {tag, "1.0.0"}}}
+    {macaroons, "1.0.2", {git, "https://github.com/kzemek/macaroons.git", {tag, "1.0.2"}}}
 ]}.
 ```
 
