@@ -41,8 +41,8 @@
 %% API
 -export([create/3, add_first_party_caveat/2, add_third_party_caveat/4,
     prepare_for_request/2]).
--export([third_party_caveats/1, location/1, signature/1, identifier/1,
-    inspect/1]).
+-export([is_macaroon/1, third_party_caveats/1, location/1, signature/1,
+    identifier/1, inspect/1]).
 -export([serialize/1, deserialize/1]).
 -export([suggested_secret_length/0]).
 
@@ -138,6 +138,17 @@ prepare_for_request(#macaroon{} = M, #macaroon{} = D) ->
     NewSig = macaroon_utils:bind_signature(M#macaroon.signature,
         D#macaroon.signature),
     D#macaroon{signature = NewSig}.
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% Returns if given term is a macaroon.
+%% @end
+%%------------------------------------------------------------------------------
+-spec is_macaroon(term()) -> boolean().
+is_macaroon(#macaroon{}) ->
+    true;
+is_macaroon(_) ->
+    false.
 
 %%------------------------------------------------------------------------------
 %% @doc
