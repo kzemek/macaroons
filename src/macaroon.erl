@@ -46,6 +46,12 @@
 -export([serialize/1, deserialize/1]).
 -export([suggested_secret_length/0]).
 
+%% Behaviour
+%% -callback serialize(Macaroon :: macaroon()) ->
+%%     {ok, binary()} | {error, Reason :: term()}.
+-callback deserialize(Data :: binary()) ->
+    #macaroon{} | no_return().
+
 %% Types
 -type macaroon() :: #macaroon{}.
 -export_type([macaroon/0]).
@@ -187,24 +193,7 @@ identifier(#macaroon{} = M) ->
     {ok, binary()} | {error, {too_long, term()}}.
 serialize(#macaroon{} = M) ->
     try
-        CaveatsData =
-            lists:reverse(lists:map(fun
-                ({Id, Vid, Location}) ->
-                    [
-                        pack(?CID_KEY, Id),
-                        pack(?VID_KEY, Vid),
-                        pack(?CL_KEY, Location)
-                    ];
-
-                (Caveat) -> pack(?CID_KEY, Caveat)
-            end, M#macaroon.caveats)),
-
-        Data = [
-            pack(?LOCATION_KEY, M#macaroon.location),
-            pack(?IDENTIFIER_KEY, M#macaroon.identifier),
-            CaveatsData,
-            pack(?SIGNATURE_KEY, M#macaroon.signature)],
-
+        Data = macaroon_v1:serialize(M),
         {ok, base64url:encode(iolist_to_binary(Data))}
     catch
         {cannot_serialize, Reason} -> {error, Reason}
@@ -224,7 +213,12 @@ deserialize(Data) when not is_binary(Data) ->
 deserialize(Data) ->
     try
         DeserializedData = base64url:decode(Data),
-        M = deserialize_lines(DeserializedData, #macaroon{}, undefined),
+        Mod =
+            case DeserializedData of
+                <<2, _/binary>> -> macaroon_v2;
+                _ -> macaroon_v1
+            end,
+        M = Mod:deserialize(DeserializedData),
         {ok, M}
     catch
         _:_ -> {error, macaroon_invalid}
@@ -268,58 +262,3 @@ inspect(#macaroon{} = M) ->
 -spec suggested_secret_length() -> non_neg_integer().
 suggested_secret_length() ->
     ?HMAC_KEYBYTES.
-
-%%%=============================================================================
-%%% Internal functions
-%%%=============================================================================
-
--spec pack(Key :: binary(), Value :: binary()) -> iolist().
-pack(Key, Value) ->
-    DataSize = ?PACKET_HEADER_SIZE + 2 + byte_size(Key) + byte_size(Value),
-    SizeEncoded =
-        list_to_binary(string:to_lower(integer_to_list(DataSize, 16))),
-
-    PaddingSize = ?PACKET_HEADER_SIZE - byte_size(SizeEncoded),
-    case PaddingSize < 0 of
-        true -> throw({cannot_serialize, {too_long, {Key, Value}}});
-        false ->
-            [
-                binary:copy(<<"0">>, PaddingSize), SizeEncoded,
-                Key, <<" ">>, Value, <<"\n">>
-            ]
-    end.
-
--spec deserialize_lines(Data :: binary(), #macaroon{},
-    LastCidVid :: undefined | {binary(), binary()}) ->
-    #macaroon{} | no_return().
-deserialize_lines(<<>>, #macaroon{} = M, undefined) -> M;
-deserialize_lines(Data, #macaroon{} = M, LastCidVid) ->
-    <<BinLineSize:?PACKET_HEADER_SIZE/binary, DataWithoutHeader/binary>> = Data,
-    LineSize = binary_to_integer(BinLineSize, 16),
-    ContentSize = LineSize - ?PACKET_HEADER_SIZE - 1,
-
-    <<Content:ContentSize/binary, "\n", RestLines/binary>> = DataWithoutHeader,
-    [Key, Value] = binary:split(Content, <<" ">>),
-
-    {NewM, NewLastCidVid} =
-        case {Key, M, LastCidVid} of
-            {?LOCATION_KEY, #macaroon{location = undefined}, _} ->
-                {M#macaroon{location = Value}, LastCidVid};
-
-            {?IDENTIFIER_KEY, #macaroon{identifier = undefined}, _} ->
-                {M#macaroon{identifier = Value}, LastCidVid};
-
-            {?SIGNATURE_KEY, #macaroon{signature = undefined}, _} ->
-                {M#macaroon{signature = Value}, LastCidVid};
-
-            {?CID_KEY, #macaroon{caveats = Rest}, undefined} ->
-                {M#macaroon{caveats = [Value | Rest]}, undefined};
-
-            {?VID_KEY, #macaroon{caveats = [Cid | Rest]}, undefined} ->
-                {M#macaroon{caveats = Rest}, {Cid, Value}};
-
-            {?CL_KEY, #macaroon{caveats = Rest}, {Cid, Vid}} ->
-                {M#macaroon{caveats = [{Cid, Vid, Value} | Rest]}, undefined}
-        end,
-
-    deserialize_lines(RestLines, NewM, NewLastCidVid).
