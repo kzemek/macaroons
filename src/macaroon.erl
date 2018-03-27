@@ -66,7 +66,7 @@ create(Location, Key, Id) when not is_binary(Location); not is_binary(Id) ->
     create(iolist_to_binary(Location), Key, iolist_to_binary(Id));
 create(Location, Key, Id) ->
     DerivedKey = macaroon_utils:derive_key(Key),
-    Signature = enacl_p:auth(?HMAC_HASH_ALGORITHM, Id, DerivedKey),
+    Signature = crypto:hmac(?HMAC_HASH_ALGORITHM, DerivedKey, Id),
     #macaroon{identifier = Id, location = Location, signature = Signature}.
 
 %%------------------------------------------------------------------------------
@@ -80,7 +80,7 @@ add_first_party_caveat(#macaroon{} = M, Caveat) when not is_binary(Caveat) ->
     add_first_party_caveat(M, iolist_to_binary(Caveat));
 add_first_party_caveat(#macaroon{} = M, Caveat) ->
     Caveats = [Caveat | M#macaroon.caveats],
-    NewSig = enacl_p:auth(?HMAC_HASH_ALGORITHM, Caveat, M#macaroon.signature),
+    NewSig = crypto:hmac(?HMAC_HASH_ALGORITHM, M#macaroon.signature, Caveat),
     M#macaroon{caveats = Caveats, signature = NewSig}.
 
 %%------------------------------------------------------------------------------
@@ -98,14 +98,13 @@ add_third_party_caveat(#macaroon{} = M, Location, Key, Id)
     add_third_party_caveat(M, iolist_to_binary(Location),
         Key, iolist_to_binary(Id));
 add_third_party_caveat(#macaroon{} = M, Location, Key, Id) ->
-    NonceSize = enacl_p:secretbox_nonce_size(?SECRETBOX_ALGORITHMS),
-    Nonce = enacl_p:randombytes(NonceSize),
+    NonceSize = enacl:secretbox_nonce_size(),
+    Nonce = enacl:randombytes(NonceSize),
 
     OldSig = M#macaroon.signature,
     DerivedKey = macaroon_utils:derive_key(Key),
 
-    CipherText =
-        enacl_p:secretbox(?SECRETBOX_ALGORITHMS, DerivedKey, Nonce, OldSig),
+    CipherText = enacl:secretbox(DerivedKey, Nonce, OldSig),
 
     Vid = <<Nonce/binary, CipherText/binary>>,
     NewSig = macaroon_utils:macaroon_hash2(Vid, Id, OldSig),
@@ -268,7 +267,7 @@ inspect(#macaroon{} = M) ->
 %%------------------------------------------------------------------------------
 -spec suggested_secret_length() -> non_neg_integer().
 suggested_secret_length() ->
-    enacl_p:auth_key_size(?HMAC_HASH_ALGORITHM).
+    ?HMAC_KEYBYTES.
 
 %%%=============================================================================
 %%% Internal functions

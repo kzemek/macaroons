@@ -35,8 +35,8 @@
 %%%-----------------------------------------------------------------------------
 
 %% Constants necessary for compatibility with libmacaroons.
--define(HMAC_HASH_ALGORITHM, hmacsha256).
--define(SECRETBOX_ALGORITHMS, xsalsa20poly1305).
+-define(HMAC_HASH_ALGORITHM, sha256).
+-define(HMAC_KEYBYTES, 32).
 -define(LIBMACAROONS_MAGIC_KEY, <<"macaroons-key-generator">>).
 -define(PACKET_HEADER_SIZE, 4).
 -define(LOCATION_KEY, <<"location">>).

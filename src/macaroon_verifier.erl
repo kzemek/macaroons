@@ -128,7 +128,7 @@ verify(#verifier{} = V, #macaroon{} = M, Key, DischargeMacaroons) ->
     ok | {error, auth_error()}.
 verify(ParentSig, V, M, Key, DischargeMacaroons) ->
     BaseSignature =
-        enacl_p:auth(?HMAC_HASH_ALGORITHM, M#macaroon.identifier, Key),
+        crypto:hmac(?HMAC_HASH_ALGORITHM, Key, M#macaroon.identifier),
 
     VerifyResult =
         verify_loop(ParentSig, V, DischargeMacaroons,
@@ -157,12 +157,11 @@ verify(ParentSig, V, M, Key, DischargeMacaroons) ->
 verify_loop(_ParentSig, _V, _DMs, [], Signature) -> {ok, Signature};
 
 verify_loop(ParentSig, V, DMs, [{Id, Vid, _Location} | Caveats], Signature) ->
-    NonceSize = enacl_p:secretbox_nonce_size(?SECRETBOX_ALGORITHMS),
+    NonceSize = enacl:secretbox_nonce_size(),
     <<Nonce:NonceSize/binary, CipherText/binary>> = Vid,
 
     OpenBoxResult =
-        enacl_p:secretbox_open(?SECRETBOX_ALGORITHMS, CipherText, Nonce,
-            Signature),
+        enacl:secretbox_open(CipherText, Nonce, Signature),
 
     case OpenBoxResult of
         {error, _} -> {error, {failed_to_decrypt_caveat, Id}};
@@ -189,7 +188,7 @@ verify_loop(ParentSig, V, DMs, [Caveat | Caveats], Signature) ->
     case caveat_verifies(V, Caveat) of
         false -> {error, {unverified_caveat, Caveat}};
         true ->
-            NewSig = enacl_p:auth(?HMAC_HASH_ALGORITHM, Caveat, Signature),
+            NewSig = crypto:hmac(?HMAC_HASH_ALGORITHM, Signature, Caveat),
             verify_loop(ParentSig, V, DMs, Caveats, NewSig)
     end.
 

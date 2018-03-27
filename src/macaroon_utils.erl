@@ -47,18 +47,18 @@
 
 -spec derive_key(VariableKey :: iodata()) -> binary().
 derive_key(VariableKey) ->
-    KeySize = enacl_p:auth_key_size(?HMAC_HASH_ALGORITHM),
+    KeySize = ?HMAC_KEYBYTES,
     ZeroesNum = KeySize - byte_size(?LIBMACAROONS_MAGIC_KEY),
     Key = <<?LIBMACAROONS_MAGIC_KEY/binary,
         0:ZeroesNum/little-signed-integer-unit:8>>,
-    enacl_p:auth(?HMAC_HASH_ALGORITHM, VariableKey, Key).
+    crypto:hmac(?HMAC_HASH_ALGORITHM, Key, VariableKey).
 
 
 -spec bind_signature(ParentSig :: binary(), DischargeSig :: binary()) ->
     binary().
 bind_signature(ParentSig, ParentSig) -> ParentSig;
 bind_signature(ParentSig, DischargeSig) ->
-    KeySize = enacl_p:auth_key_size(?HMAC_HASH_ALGORITHM),
+    KeySize = ?HMAC_KEYBYTES,
     Key = <<0:KeySize/little-signed-integer-unit:8>>,
     macaroon_utils:macaroon_hash2(ParentSig, DischargeSig, Key).
 
@@ -66,9 +66,9 @@ bind_signature(ParentSig, DischargeSig) ->
 -spec macaroon_hash2(Data1 :: iodata(), Data2 :: iodata(), Key :: iodata()) ->
     binary().
 macaroon_hash2(Data1, Data2, Key) ->
-    Hash1 = enacl_p:auth(?HMAC_HASH_ALGORITHM, Data1, Key),
-    Hash2 = enacl_p:auth(?HMAC_HASH_ALGORITHM, Data2, Key),
-    enacl_p:auth(?HMAC_HASH_ALGORITHM, [Hash1, Hash2], Key).
+    Hash1 = crypto:hmac(?HMAC_HASH_ALGORITHM, Key, Data1),
+    Hash2 = crypto:hmac(?HMAC_HASH_ALGORITHM, Key, Data2),
+    crypto:hmac(?HMAC_HASH_ALGORITHM, Key, [Hash1, Hash2]).
 
 
 -spec hex_encode(Data :: binary()) -> binary().

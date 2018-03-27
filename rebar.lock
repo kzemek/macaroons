@@ -2,7 +2,7 @@
   {git,"https://github.com/dvv/base64url.git",
        {ref,"f2c64ed8b9bebc536fad37ad97243452b674b837"}},
   0},
- {<<"enacl_p">>,
-  {git,"https://github.com/kzemek/enacl_p.git",
-       {ref,"ea22638b684a79eba831d2df54666905bd451b15"}},
+ {<<"enacl">>,
+  {git,"https://github.com/jlouis/enacl.git",
+       {ref,"61be95caadaaceae9f8d0cad7f5149ce3f44b65f"}},
   0}].
